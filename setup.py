@@ -132,6 +132,15 @@ setup(
                     "sounddevice == 0.3.*",
                     "webrtcvad-wheels == 2.0.*",
                    ],
+          "draconity": [
+                        # `pymongo` provides `bson` - we don't want the `bson`
+                        # pip package.
+                        "pymongo >= 3.9.0",
+                       ],
+
+      tests_require=[
+                     "mock;python_version<'3.3'",
+                    ],
       },
 
       cmdclass={
