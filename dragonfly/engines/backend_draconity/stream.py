@@ -4,10 +4,10 @@ Includes the abstract interface and a TCP implementation. All streams should
 implement the abstract interface.
 
 Draconity can communicate over TCP and named pipes, but the named pipe
-implementation will depend on the platform. The purpose of the `Stream`
-construct is to abstract away the underlying communication mechanism, and just
-treat it as "put bytes in, get bytes back". The particular stream can then be
-injected into a higher-level client.
+implementation will depend on the platform. The purpose of the Stream construct
+is to abstract away the underlying communication mechanism, and just treat it
+as "put bytes in, get bytes back". The particular stream can then be injected
+into a higher-level client.
 
 """
 
@@ -37,7 +37,7 @@ class StreamError(RuntimeError):
         super(StreamError, self).__init__(full_message)
 
 
-class Stream(object):
+class StreamBase(object):
     """Interface for some kind of network stream.
 
     Bytes can be sent or received over the stream.
@@ -65,7 +65,7 @@ class Stream(object):
         """Send data over the stream.
 
         :param bytes data: the data to send
-        :raises StreamError: if the Stream is disconnected (or encounters
+        :raises StreamError: if the StreamBase is disconnected (or encounters
           an issue) while sending.
 
         """
@@ -75,14 +75,14 @@ class Stream(object):
         """Receive data from the stream.
 
         :param int size: the amount of data to receive (in bytes).
-        :raises StreamError: if the Stream is disconnected (or encounters
+        :raises StreamError: if the StreamBase is disconnected (or encounters
           an issue) while receiving.
 
         """
         raise NotImplementedError("Interface not implemented.")
 
 
-class TCPStream(Stream):
+class TCPStream(StreamBase):
 
     def __init__(self, host, port):
         """Create and establish a TCP stream.
