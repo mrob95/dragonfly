@@ -1,7 +1,7 @@
 """Functional tests for `stream.py` - specifically, the TCP stream.
 
 These tests check the TCP stream against a dummy server. Fundamentally
-`TCPStream` just a wrapper around a TCP socket, so unit testing is not that
+`TCPStream` is just a wrapper around a TCP socket, so unit testing is not that
 useful - better to check it against a live server.
 
 """
