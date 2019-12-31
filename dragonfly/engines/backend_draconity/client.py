@@ -103,7 +103,7 @@ class DraconityClient(object):
         try:
             while True:
                 tid, message = self._pump_one_message()
-                self.handle_message(tid, message)
+                self._handle_message(tid, message)
         except Exception as error:
             if not self._deliberately_closed:
                 self._handle_error(error)
