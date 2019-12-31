@@ -186,6 +186,16 @@ class TestTcpStream:
             message_received.length, message.length
         )
 
+    def test__recv_with_buffered_send(self):
+        # What if the server is trying to send us more than we're willing to
+        # receive? Do we only get what we want?
+        long_message = b"1" * (10 ^ 4)
+        server = _DummyServer(message_to_send=long_message)
+        client = self._connect(server)
+        desired_amount = 8
+        message_received = client.recv(desired_amount)
+        eq_(len(message_received), 8)
+
     def test_recv_interrupted(self):
         # Have the server send half the message, then die.
         server = _DummyServer(message_to_send=b"123")

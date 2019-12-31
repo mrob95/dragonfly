@@ -129,7 +129,7 @@ class TCPStream(StreamBase):
         data = []
         received = 0
         while received < size:
-            chunk = self._recv_chunk(max(size - received, 2048))
+            chunk = self._recv_chunk(min(size - received, 2048))
             data.append(chunk)
             received += len(chunk)
         # Reduce combines the data but also normalizes to a string.
