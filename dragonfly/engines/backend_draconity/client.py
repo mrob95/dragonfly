@@ -235,3 +235,101 @@ class DraconityClient(object):
         header = _DRACONITY_HEADER_STRUCT.pack(tid, len(bson_message))
         full_message = header + bson_message
         return tid, full_message
+
+
+def prep_grammar_set(name, grammar, active_rules=[], lists={}):
+    """Prepare a 'g.set' message.
+
+    :param str name: the name of the grammar to load. This is the unique
+      identifier that will be used to reference the grammar within Draconity.
+    :param bytes grammar: a raw grammar blob, compiled to Dragon format.
+    :param active_rules: a list of rules to activate.
+    :type active_rules: list(str)
+    :param lists: the contents of each list in the grammar.
+    :type lists: dict(str, list(str))
+
+    """
+    if name.lower() == "dragon":
+        raise ValueError('"dragon" is a reserved grammar name.')
+    grammar_bson = bson.binary.Binary(grammar)
+    return {
+        "cmd": "g.set",
+        "name": name,
+        "data": grammar_bson,
+        "active_rules": active_rules,
+        "lists": lists,
+    }
+
+
+def prep_grammar_unload(name):
+    """Prepare a 'g.unload' message.
+
+    :param str name: the name of the grammar to unload.
+
+    """
+    return {"cmd": "g.unload", "name": name}
+
+
+def prep_word_set(words):
+    """Prepare a 'w.set' message.
+
+    :param words: list of words to add.
+    :type words: list(str)
+
+    """
+    return {"cmd": "w.set", "words": words}
+
+
+def prep_words_list():
+    """Prepare a 'w.list' message."""
+    return {"cmd": "w.list"}
+
+
+def prep_unpause(token):
+    """Prepare an 'unpause' message.
+
+    :param token: the pause token to unpause for.
+
+    """
+    return {"cmd": "unpause", "token": token}
+
+
+def prep_status():
+    """Prepare a 'status' message."""
+    return {"cmd": "status"}
+
+
+def prep_mimic(phrase):
+    """Prepare a 'mimic' message.
+
+    :param phrase: the recognition to mimic, as a list of individual words.
+    :type phrase: list(str)
+
+    """
+    if isinstance(phrase, str):
+        # Common mistake would be to pass a full string, not a list of words.
+        raise ValueError(
+            "The phrase must be a list of individual words. Please split it."
+        )
+    return {"cmd": "mimic", "phrase": phrase}
+
+
+def prep_set_mic_state(state):
+    """Prepare a 'mic.set_state' message.
+
+    :param str state: the target mic state. "on", "off" or "sleeping".
+
+    """
+    valid_states = ["on", "off", "sleeping"]
+    if state not in valid_states:
+        raise ValueError("State must be one of {}".format(valid_states))
+    return {"cmd": "mic.set_state", "state": state}
+
+
+def prep_auth(secret):
+    """Prepare an auth message.
+
+    :param str secret: the secret key from the Draconity config.
+
+    """
+    return {"cmd": "auth", "secret": secret}

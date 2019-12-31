@@ -245,3 +245,25 @@ class TestDraconityClient:
             prepped_message,
             b"\x00\x00\x00\x02\x00\x00\x00\x16\x16\x00\x00\x00\x02another\x00\x04\x00\x00\x00one\x00\x00",
         )
+
+
+class Test_prep_methods(object):
+    # We test the integrity of message preparation in the integration tests, by
+    # actually sending them to Draconity. These unit tests are used to test
+    # other properties.
+    def test_prep_set_mic_state_invalid_state(self):
+        assert_raises(ValueError, client.prep_set_mic_state, "lkasfkfjaklsgjk")
+        assert_raises(ValueError, client.prep_set_mic_state, "paused")
+
+    def test_prep_mimic_passing_string(self):
+        assert_raises(
+            ValueError, client.prep_mimic, "one long string that is not a list"
+        )
+
+    def test_prep_grammar_set_dragon_grammar(self):
+        dummy_name = b"dummy_grammar"
+        # Check the `dummy_name` is ok.
+        assert isinstance(client.prep_grammar_set("dummy_name", dummy_name), dict)
+
+        assert_raises(ValueError, client.prep_grammar_set, "dragon", dummy_name)
+        assert_raises(ValueError, client.prep_grammar_set, "Dragon", dummy_name)
