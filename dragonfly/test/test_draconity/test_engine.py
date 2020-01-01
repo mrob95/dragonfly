@@ -49,7 +49,7 @@ class Test_DraconityConfig(object):
 
     good_pipe = """
         [[pipe]]
-        name = "dummy_pipe"
+        path = "dummy_pipe"
     """
     empty_pipe = """
         [[pipe]]
@@ -57,7 +57,7 @@ class Test_DraconityConfig(object):
     no_pipe = ""
     bad_pipe_form = """
         [pipe]
-        name = "dummy pipe"
+        path = "dummy pipe"
     """
 
     @parameterized(
@@ -68,9 +68,9 @@ class Test_DraconityConfig(object):
             [bad_pipe_form, None],
         ]
     )
-    def test__extract_pipe_name(self, toml_object, target_pipe_name):
+    def test__extract_pipe_path(self, toml_object, target_pipe_path):
         toml_config = toml.loads(toml_object)
-        eq_(target_pipe_name, engine._DraconityConfig._extract_pipe_name(toml_config))
+        eq_(target_pipe_path, engine._DraconityConfig._extract_pipe_path(toml_config))
 
     def test__extract_secret(self):
         toml_config = toml.loads('secret = "dummy_secret"')
@@ -86,11 +86,11 @@ class Test_DraconityConfig(object):
         with patch.object(
             engine._DraconityConfig,
             "_load_info_from_disk",
-            return_value=("secret", "pipe_name", "tcp_host", "tcp_port"),
+            return_value=("secret", "pipe_path", "tcp_host", "tcp_port"),
         ):
             config = engine._DraconityConfig.load_from_disk()
         eq_(config.secret, "secret")
-        eq_(config.pipe_name, "pipe_name")
+        eq_(config.pipe_path, "pipe_path")
         eq_(config.tcp_host, "tcp_host")
         eq_(config.tcp_port, "tcp_port")
 
@@ -102,13 +102,13 @@ class Test_DraconityConfig(object):
         port = "port"
 
         [[pipe]]
-        name = "pipe"
+        path = "pipe"
     """
     no_socket = """
         secret = "secret"
 
         [[pipe]]
-        name = "pipe"
+        path = "pipe"
     """
     no_pipe = """
         secret = "secret"

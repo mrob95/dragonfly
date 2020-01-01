@@ -31,9 +31,9 @@ def _draconity_config_path():
 
 
 class _DraconityConfig(object):
-    def __init__(self, secret, pipe_name, tcp_host, tcp_port):
+    def __init__(self, secret, pipe_path, tcp_host, tcp_port):
         """Create an object that holds the current Draconity config."""
-        self.pipe_name = pipe_name
+        self.pipe_path = pipe_path
         self.tcp_host = tcp_host
         self.tcp_port = tcp_port
         self.secret = secret
@@ -57,10 +57,10 @@ class _DraconityConfig(object):
         return host, port
 
     @staticmethod
-    def _extract_pipe_name(config):
+    def _extract_pipe_path(config):
         """Extract the pipe name from the toml `config`."""
         try:
-            return config["pipe"][0]["name"]
+            return config["pipe"][0]["path"]
         except (IndexError, KeyError, TypeError):
             return None
 
@@ -75,22 +75,22 @@ class _DraconityConfig(object):
 
     @classmethod
     def load_from_disk(cls):
-        secret, pipe_name, tcp_host, tcp_port = cls._load_info_from_disk()
-        return cls(secret, pipe_name, tcp_host, tcp_port)
+        secret, pipe_path, tcp_host, tcp_port = cls._load_info_from_disk()
+        return cls(secret, pipe_path, tcp_host, tcp_port)
 
     @staticmethod
     def _load_info_from_disk():
         config_toml = _DraconityConfig._load_config_file()
-        pipe_name = _DraconityConfig._extract_pipe_name(config_toml)
+        pipe_path = _DraconityConfig._extract_pipe_path(config_toml)
         tcp_host, tcp_port = _DraconityConfig._extract_tcp_host(config_toml)
-        _DraconityConfig._assert_valid_connection(pipe_name, tcp_host, tcp_port)
+        _DraconityConfig._assert_valid_connection(pipe_path, tcp_host, tcp_port)
         secret = _DraconityConfig._extract_secret(config_toml)
-        return secret, pipe_name, tcp_host, tcp_port
+        return secret, pipe_path, tcp_host, tcp_port
 
     @staticmethod
-    def _assert_valid_connection(pipe_name, tcp_host, tcp_port):
+    def _assert_valid_connection(pipe_path, tcp_host, tcp_port):
         """Ensure there was at least one valid connection loaded."""
-        connection_defined = pipe_name or (tcp_host and tcp_port)
+        connection_defined = pipe_path or (tcp_host and tcp_port)
         if not connection_defined:
             raise ValueError(
                 "Neither pipe nor full TCP socket defined in Draconity config."
