@@ -108,10 +108,10 @@ class TCPStream(StreamBase):
             pass
         self._socket.close()
 
-    def send(self, chunk):
+    def send(self, data):
         # TODO: Timeout?
         try:
-            self._socket.sendall(chunk)
+            self._socket.sendall(data)
         except Exception as error:
             raise StreamError("Connection interrupted.", error)
 
