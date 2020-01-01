@@ -1,10 +1,15 @@
 """Suite to test behavior against a live instance of Draconity.
 
-The objective of this suite is to ensure our assumptions about how to
-communicate with Draconity & pass information to it are correct. If the API
-surface we rely on changes, these tests should flag it and fail.
+This suite is designed to be run explicitly, not automatically. Draconity must
+be running for these tests to work. The suite connects with the settings in
+Draconity's config file. It's slow - it could take 20-30 seconds to run.
 
-Note these tests must be run sequentially - they won't work in parallel.
+The objective is to ensure our assumptions about how to communicate with
+Draconity & pass information to it are correct. If the API surface we rely on
+changes, these tests should flag it and fail.
+
+Note these tests must be run sequentially - they won't work in parallel. The
+rapid simultaneous connections can confuse Draconity.
 
 """
 
