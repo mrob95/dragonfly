@@ -304,6 +304,9 @@ def _full_mimic(client_helper, phrase, mic_state="on"):
 
 def _make_tcp_stream(*_):
     config = _get_config()
+    config_tuple = (config.tcp_host, config.tcp_port)
+    assert isinstance(config.tcp_host, (str, unicode)), config_tuple
+    assert isinstance(config.tcp_port, int), config_tuple
     return stream.TCPStream(config.tcp_host, config.tcp_port)
 
 
