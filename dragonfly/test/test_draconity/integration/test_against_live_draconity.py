@@ -11,6 +11,8 @@ Note these tests must be run sequentially - they won't work in parallel.
 import time
 import pprint
 
+from parameterized import parameterized_class
+
 
 from dragonfly.engines.backend_draconity import client, engine, stream
 from dragonfly.test.test_draconity.integration import _example_grammar
@@ -63,8 +65,18 @@ class _ClientHelper(object):
 
     """
 
-    def __init__(self, auto_unpause=True):
-        self.stream = None
+    def __init__(self, make_stream, auto_unpause=True):
+        """Create a new helper to help `DraconityClient` tests.
+
+        :param make_stream: function that returns a connected StreamBase
+          implementation. This is separated so the helper can be used with any
+          stream implementation.
+        :type make_stream: callable()
+        :param bool auto_unpause: Optional. Should the helper unpause the client
+          immediately whenever a pause message comes in? Default is True.
+
+        """
+        self._make_stream = make_stream
         self.on_disconnect = Mock()
         self.client = client.DraconityClient(
             on_message=self._handle_message,
@@ -83,7 +95,7 @@ class _ClientHelper(object):
 
         """
         config = _get_config()
-        self.stream = stream.TCPStream(config.tcp_host, config.tcp_port)
+        self.stream = self._make_stream()
         self.client.connect(self.stream)
         self.send_wait_success(client.prep_auth(config.secret))
         return self
@@ -290,20 +302,30 @@ def _full_mimic(client_helper, phrase, mic_state="on"):
         client_helper.send_wait_success(client.prep_mimic(phrase.split()), 2)
 
 
+def _make_tcp_stream(*_):
+    config = _get_config()
+    return stream.TCPStream(config.tcp_host, config.tcp_port)
+
+
 class TestBasicConnection(object):
     """Test basic connection functionality for each stream."""
 
     def test_tcp_connection(self):
-        config = _get_config()
-        connected_stream = stream.TCPStream(config.tcp_host, config.tcp_port)
-        connected_stream.close()
+        tcp_stream = _make_tcp_stream()
+        tcp_stream.close()
 
 
+@parameterized_class(
+    [
+        {"make_stream": _make_tcp_stream},
+        # TODO: {"make_stream": _make_windows_pipe_stream},
+    ]
+)
 class TestMessagesWork(object):
     """Test our messages can manipulate a live Draconity instance."""
 
     def test_set_mic_state(self):
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             c.send_wait_success(client.prep_set_mic_state("on"))
             c.send_wait_success(client.prep_set_mic_state("sleeping"))
             c.send_wait_success(client.prep_set_mic_state("off"))
@@ -319,7 +341,7 @@ class TestMessagesWork(object):
 
     def test_grammar_set(self):
         """Ensure we can set a grammar and perform recognitions against it."""
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             with _TempGrammar(
                 c,
                 _example_grammar.name,
@@ -341,7 +363,7 @@ class TestMessagesWork(object):
         to check this against a grammar that's actually loaded.
 
         """
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             _assert_unload_grammar(c, "grammar_that_does_not_exist_1208947")
 
     @staticmethod
@@ -356,7 +378,7 @@ class TestMessagesWork(object):
         return response.get("words")
 
     def test_words_list(self):
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             word_list = self._list_words(c)
             # We can't check the word list directly, so just check it looks
             # like a real word list.
@@ -364,7 +386,7 @@ class TestMessagesWork(object):
             assert len(word_list) > 100, word_list
 
     def test_words_set(self):
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             new_words = ["oflafupqwutqp", "saofiusiufaof", "saklffjaflj"]
 
             # Double check our nonsense words aren't loaded when we begin.
@@ -385,11 +407,11 @@ class TestMessagesWork(object):
                 assert new_word in loaded_words, new_word
 
     def test_mimic(self):
-        with _ClientHelper() as c:
+        with _ClientHelper(self.make_stream) as c:
             _full_mimic(c, "wake up", mic_state="sleeping")
 
     def test_unpause(self):
-        with _ClientHelper(auto_unpause=False) as c:
+        with _ClientHelper(self.make_stream, auto_unpause=False) as c:
             # Trigger a pause by mimicking nonsense on a sleeping mic
             with _TempMicState(c, "sleeping"):
                 c.client.send(client.prep_mimic(["280'24;2142148`"]))
