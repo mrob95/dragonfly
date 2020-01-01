@@ -10,6 +10,7 @@ Note these tests must be run sequentially - they won't work in parallel.
 
 import time
 import pprint
+import platform
 
 from parameterized import parameterized_class
 
@@ -22,6 +23,7 @@ from dragonfly.test.mock_proxy import Mock
 # The default time to wait for a response from Draconity.
 DEFAULT_TIMEOUT = 5
 
+_ON_WINDOWS = platform.system() == "Windows"
 _draconity_config_cache = None
 
 
@@ -310,6 +312,15 @@ def _make_tcp_stream(*_):
     return stream.TCPStream(config.tcp_host, config.tcp_port)
 
 
+def _make_windows_pipe_stream(*_):
+    # Platform-dependent import - do it locally
+    from dragonfly.engines.backend_draconity import windows_pipe
+
+    config = _get_config()
+    assert isinstance(config.pipe_path, (str, unicode)), config.pipe_path
+    return windows_pipe.PipeStream(config.pipe_path)
+
+
 class TestBasicConnection(object):
     """Test basic connection functionality for each stream."""
 
@@ -317,13 +328,19 @@ class TestBasicConnection(object):
         tcp_stream = _make_tcp_stream()
         tcp_stream.close()
 
+    if _ON_WINDOWS:
 
-@parameterized_class(
-    [
-        {"make_stream": _make_tcp_stream},
-        # TODO: {"make_stream": _make_windows_pipe_stream},
-    ]
-)
+        def test_windows_pipe_connection(self):
+            pipe_stream = _make_windows_pipe_stream()
+            pipe_stream.close()
+
+
+streams_to_test = [{"make_stream": _make_tcp_stream}]
+if _ON_WINDOWS:
+    streams_to_test.append({"make_stream": _make_windows_pipe_stream})
+
+
+@parameterized_class(streams_to_test)
 class TestMessagesWork(object):
     """Test our messages can manipulate a live Draconity instance."""
 
