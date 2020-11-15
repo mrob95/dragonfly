@@ -131,6 +131,22 @@ def get_engine(name=None, **kwargs):
             if name:
                 raise EngineError(message)
 
+    if name == "draconity":
+        try:
+            from .backend_draconity import get_engine as get_specific_engine
+            _default_engine = get_specific_engine(**kwargs)
+            _engines_by_name["draconity"] = _default_engine
+            return _default_engine
+
+        except Exception as e:
+            message = ("Exception while initializing draconity engine:"
+                       " %s" % (e,))
+            log.exception(message)
+            traceback.print_exc()
+            print(message)
+            if name:
+                raise EngineError(message)
+
     # Only retrieve the text input engine if explicitly specified; it is not
     # an actual SR engine implementation and is mostly intended to be used
     # for testing.

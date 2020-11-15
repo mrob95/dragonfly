@@ -1,3 +1,4 @@
+import logging
 import struct
 import itertools
 import threading
@@ -6,7 +7,6 @@ import traceback
 import bson
 
 from dragonfly.engines.backend_draconity import stream
-
 
 _DRACONITY_HEADER_STRUCT = struct.Struct(">II")
 
@@ -26,6 +26,8 @@ class DraconityClient(object):
     over the stream.
 
     """
+
+    _log = logging.getLogger(__name__)
 
     def __init__(self, on_message, on_error=None, on_disconnect=None):
         """Create a new message receiver.
@@ -149,7 +151,7 @@ class DraconityClient(object):
         """Communicate an exception to the user."""
         # TODO: Figure out the correct way to communicate exceptions to the
         #   user.
-        traceback.print_exc(limit=40)
+        self._log.error(message, exc_info=True)
 
     def _handle_error(self, error):
         if callable(self._on_error):
@@ -174,6 +176,7 @@ class DraconityClient(object):
             self._on_message(tid, message)
         except Exception as e:
             self._communicate_exception("An error occured handling the error.")
+            raise
 
     def _safely_close_stream(self):
         """Close the stream, if it's open. Ignore errors.
@@ -237,7 +240,7 @@ class DraconityClient(object):
         return tid, full_message
 
 
-def prep_grammar_set(name, grammar, active_rules=[], lists={}):
+def prep_grammar_set(name, grammar, active_rules=[], lists={}, exclusive=False):
     """Prepare a 'g.set' message.
 
     :param str name: the name of the grammar to load. This is the unique
@@ -258,6 +261,7 @@ def prep_grammar_set(name, grammar, active_rules=[], lists={}):
         "data": grammar_bson,
         "active_rules": active_rules,
         "lists": lists,
+        "exclusive": exclusive,
     }
 
 
