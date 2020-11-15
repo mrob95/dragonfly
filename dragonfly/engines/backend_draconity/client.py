@@ -176,7 +176,6 @@ class DraconityClient(object):
             self._on_message(tid, message)
         except Exception as e:
             self._communicate_exception("An error occured handling the error.")
-            raise
 
     def _safely_close_stream(self):
         """Close the stream, if it's open. Ignore errors.

@@ -187,7 +187,6 @@ class DraconityEngine(EngineBase):
         wrapper.dirty = True
 
     def deactivate_rule(self, rule, grammar):
-        # TODO: Get rid of %'s
         self._log.debug("Dectivating rule %s.", rule.name)
         wrapper = self._get_grammar_wrapper(grammar)
         if not wrapper:
@@ -210,7 +209,8 @@ class DraconityEngine(EngineBase):
             self._log.warning("Cannot set exclusiveness of grammar %s, as the grammar is not loaded.", grammar)
             return
         if wrapper.exclusive != exclusive:
-            wrapper.set_exclusiveness(exclusive)
+            wrapper.exclusive = exclusive
+            wrapper.dirty = True
 
     #------------------------------------------------
 
@@ -252,26 +252,34 @@ class DraconityEngine(EngineBase):
                 elif topic == "g.set" and not msg["success"]:
                     # g.set failed, try again
                     wrapper = self._get_grammar_wrapper(msg["name"])
-                    if not wrapper:
+                    if wrapper:
+                        wrapper.dirty = True
+                    else:
                         # Not sure how this would happen, hopefully it won't
                         self._log.warning("Received a failure notification in setting grammar %s, but could not find it in _grammar_wrappers.", msg["name"])
-                    else:
-                        wrapper.dirty = True
             if "language_id" in msg:
                 self._set_language(msg["language_id"])
 
             if "success" in msg and not msg["success"]:
                 # Something went wrong
-                self._recognition_observer_manager.notify_failure()
+                self._recognition_observer_manager.notify_failure(msg)
                 self._log.error("Error received from draconity: %s", format_message(msg))
         except:
             self._log.error("Error handling message: %s", format_message(msg), exc_info=True)
 
     def phrase_end(self, data):
+        # TODO: Investigate
+        # https://github.com/dictation-toolbox/dragonfly/commit/9dbf1ce6b95d6aee63e0275dd66a0df6e9a751db
+
         grammar_name = data["grammar"]
         wrapper = self._get_grammar_wrapper(grammar_name)
+        grammar = wrapper.grammar
 
         words = data["phrase"]
+        rule_ids = [d[self.rule_id_key] for d in data["words"]]
+        words_rules = list(zip(words, rule_ids))
+
+        self._log.debug("Grammar %s: received recognition %r.", grammar.name, words)
 
         # Call the grammar"s general process_recognition method, if present.
         func = getattr(wrapper.grammar, "process_recognition", None)
@@ -279,8 +287,20 @@ class DraconityEngine(EngineBase):
             if not func(words):
                 return
 
-        rule_ids = [d[self.rule_id_key] for d in data["words"]]
-        wrapper.results_callback(words, rule_ids)
+        s = state_.State(words_rules, grammar._rule_names, self)
+        for r in grammar._rules:
+            if not (r.active and r.exported): continue
+            s.initialize_decoding()
+            for _ in r.decode(s):
+                if s.finished():
+                    root = s.build_parse_tree()
+                    self._recognition_observer_manager.notify_recognition(words, r, root, data)
+                    r.process_recognition(root)
+                    return
+
+        self._log.warning("Grammar %s: failed to decode"
+                                   " recognition %r.", grammar.name, words_rules)
+
 
     def _get_language(self):
         return self._language
@@ -313,31 +333,26 @@ class GrammarWrapper(object):
         # Grammar won't be loaded until the first pause
         self.dirty = True
 
-    def up_to_date(self):
-        # Flags keep track of what has changed since the last update
-        self.dirty = False
-
-    def set_exclusiveness(self, exclusive):
-        self.dirty = True
-        self.exclusive = exclusive
-
     def update_state(self):
-        # TODO: Finish this comment...
         #
         # There are three things which might change during grammar.process_begin:
         # - Rules can be activated and deactivated
         # - Dynamic lists can be updated
         # - Exclusiveness can be changed
         #
-        # Draconity uses the g.set call for all of these: we just set the grammar to the way we want it to be. ...
+        # Draconity uses the g.set call for all of these: we just set the grammar to the way we want it to be.
         #
-        # Line 445 in grammar_base:
-        # [r.deactivate() for r in self._rules if r.active]
-        # would cause spam
+        # To avoid spamming these calls with stuff like [r.deactivate() for r in self._rules if r.active]
+        # the engine methods for these things don't actually call g.set, they just set
+        # dirty = True on the grammar's wrapper, indicating that the new state needs to be flushed.
         #
-
-        changed = self.dirty
+        # Once all process_begin calls have finished and all grammars have updated themselves
+        # we recompute the active rules, lists and exclusiveness for all dirty grammars
+        # and send a single g.set message with the new state.
+        #
+        changed = False
         if self.dirty:
+            changed = True
             self.state.update({
                 "active_rules": [r.name for r in self.grammar._rules if r.active and r.exported],
                 "lists": {
@@ -346,25 +361,5 @@ class GrammarWrapper(object):
                 },
                 "exclusive": self.exclusive,
             })
-        self.up_to_date()
+        self.dirty = False
         return self.state, changed
-
-
-    def results_callback(self, words, rule_ids):
-        DraconityEngine._log.debug("Grammar %s: received recognition %r.", self.grammar.name, words)
-
-        words_rules = list(zip(words, rule_ids))
-        s = state_.State(words_rules, self.grammar._rule_names, self.engine)
-        for r in self.grammar._rules:
-            if not (r.active and r.exported): continue
-            s.initialize_decoding()
-            for _ in r.decode(s):
-                if s.finished():
-                    self.engine._recognition_observer_manager.notify_recognition(words)
-                    root = s.build_parse_tree()
-                    r.process_recognition(root)
-                    return
-
-        DraconityEngine._log.warning("Grammar %s: failed to decode"
-                                   " recognition %r.", self.grammar.name, words_rules)
-
