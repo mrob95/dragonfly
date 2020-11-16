@@ -237,6 +237,9 @@ class DraconityEngine(EngineBase):
         self._message_loop.queue_function(self.client.send, msg)
 
     def handle_message(self, tid, msg):
+        self._message_loop.queue_function(self._handle_message, tid, msg)
+
+    def _handle_message(self, tid, msg):
         try:
             self._log.debug("[%i] %s", tid, format_message(msg))
             # Parse message and dispatch
