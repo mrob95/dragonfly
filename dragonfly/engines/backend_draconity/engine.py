@@ -1,5 +1,5 @@
 import sys
-from typing import Dict
+from pathlib import Path
 
 if sys.version_info < (3,):
     from Queue import Queue
@@ -69,9 +69,12 @@ class DraconityEngine(EngineBase):
         super(DraconityEngine, self).__init__()
 
         # Path to inject.exe
-        self.injector_path = injector_path
+        injector_path = Path(injector_path)
+        self.injector_path = str(injector_path.resolve(strict=True))
+
         # Path to libdraconity.dll
-        self.draconity_path = draconity_path
+        draconity_path = Path(draconity_path)
+        self.draconity_path = str(draconity_path.resolve(strict=True))
 
         # Because dragon added a new member to the dsx_word_node struct
         # in version 15 the rule id (which we need to decode the recognition)
@@ -109,6 +112,8 @@ class DraconityEngine(EngineBase):
 
     def disconnect(self):
         # TODO: Unload grammars? I think draconity does it anyway
+        for wrapper in self._iter_all_grammar_wrappers_dynamically():
+            self.unload_grammar(wrapper.grammar)
         self.client.close()
 
     def load_grammar(self, grammar):
@@ -231,7 +236,7 @@ class DraconityEngine(EngineBase):
     def queue_send(self, msg):
         self._message_loop.queue_function(self.client.send, msg)
 
-    def handle_message(self, tid: int, msg: Dict):
+    def handle_message(self, tid, msg):
         try:
             self._log.debug("[%i] %s", tid, format_message(msg))
             # Parse message and dispatch
