@@ -1,7 +1,3 @@
-from dragonfly.engines.backend_draconity.dictation import DraconityDictationContainer
-from dragonfly.grammar.grammar_base import Grammar
-from dragonfly.engines.base.recobs import RecObsManagerBase
-from dragonfly.engines.base.engine import EngineError
 import sys
 from typing import Dict
 
@@ -10,14 +6,16 @@ if sys.version_info < (3,):
 else:
     from queue import Queue
 
-from ..base import EngineBase
+from ..base import EngineBase, EngineError, RecObsManagerBase, GrammarWrapperBase
 from ..backend_natlink.compiler import NatlinkCompiler
 from ...grammar import state as state_
+from ...grammar.grammar_base import Grammar
 from .config import _DraconityConfig
 from .inject import inject_draconity
 from .stream import TCPStream
 from .client import DraconityClient, prep_auth, prep_grammar_set, prep_grammar_unload, prep_status, prep_mimic, prep_unpause
-from dragonfly import Window
+from .dictation import DraconityDictationContainer
+from ...windows import Window
 
 def format_message(msg):
     # Remove binary blobs from a message so it can be printed
@@ -128,7 +126,7 @@ class DraconityEngine(EngineBase):
         (compiled_grammar, grammar._rule_names) = c.compile_grammar(grammar)
 
         state = prep_grammar_set(grammar.name, compiled_grammar)
-        return GrammarWrapper(grammar, state, self)
+        return GrammarWrapper(grammar, state, self, self._recognition_observer_manager)
 
     def unload_grammar(self, grammar):
         wrapper = self._grammar_wrappers.pop(grammar.name)
@@ -179,7 +177,7 @@ class DraconityEngine(EngineBase):
     # The rule/list will change its own activity status/elements
     # then we flush at the end of update_all_grammars
     def activate_rule(self, rule, grammar):
-        self._log.debug("Activating rule %s.", rule.name)
+        self._log.debug("Activating rule %s in grammar %s.", rule.name, grammar.name)
         wrapper = self._get_grammar_wrapper(grammar)
         if not wrapper:
             self._log.warning("Cannot activate rule %s for grammar %s, as the grammar is not loaded.", rule.name, grammar)
@@ -187,26 +185,26 @@ class DraconityEngine(EngineBase):
         wrapper.dirty = True
 
     def deactivate_rule(self, rule, grammar):
-        self._log.debug("Dectivating rule %s.", rule.name)
+        self._log.debug("Dectivating rule %s in grammar %s.", rule.name, grammar.name)
         wrapper = self._get_grammar_wrapper(grammar)
         if not wrapper:
-            self._log.warning("Cannot deactivate rule %s for grammar %s, as the grammar is not loaded.", rule.name, grammar)
+            self._log.warning("Cannot deactivate rule %s for grammar %s, as the grammar is not loaded.", rule.name, grammar.name)
             return
         wrapper.dirty = True
 
     def update_list(self, lst, grammar):
-        self._log.debug("Updating list %s in grammar %s", lst, grammar)
+        self._log.debug("Updating list %s in grammar %s", lst, grammar.name)
         wrapper = self._get_grammar_wrapper(grammar)
         if not wrapper:
-            self._log.warning("Cannot update list %s in grammar %s, as the grammar is not loaded.", lst, grammar)
+            self._log.warning("Cannot update list %s in grammar %s, as the grammar is not loaded.", lst, grammar.name)
             return
         wrapper.dirty = True
 
     def set_exclusiveness(self, grammar, exclusive):
-        self._log.debug("Setting exclusiveness of grammar %s to %s.", grammar, exclusive)
+        self._log.debug("Setting exclusiveness of grammar %s to %s.", grammar.name, exclusive)
         wrapper = self._get_grammar_wrapper(grammar)
         if not wrapper:
-            self._log.warning("Cannot set exclusiveness of grammar %s, as the grammar is not loaded.", grammar)
+            self._log.warning("Cannot set exclusiveness of grammar %s, as the grammar is not loaded.", grammar.name)
             return
         if wrapper.exclusive != exclusive:
             wrapper.exclusive = exclusive
@@ -251,6 +249,7 @@ class DraconityEngine(EngineBase):
                             self.phrase_end(msg)
                 elif topic == "g.set" and not msg["success"]:
                     # g.set failed, try again
+                    self._log.warning("Received a failure message when setting a grammar, %s", format_message(msg))
                     wrapper = self._get_grammar_wrapper(msg["name"])
                     if wrapper:
                         wrapper.dirty = True
@@ -258,6 +257,9 @@ class DraconityEngine(EngineBase):
                         # Not sure how this would happen, hopefully it won't
                         self._log.warning("Received a failure notification in setting grammar %s, but could not find it in _grammar_wrappers.", msg["name"])
             if "language_id" in msg:
+                if msg["language_id"] < 0:
+                    self._log.warning("Received status packet with negative language id, %s", format_message(msg))
+                    self.queue_send(prep_status())
                 self._set_language(msg["language_id"])
 
             if "success" in msg and not msg["success"]:
@@ -267,24 +269,30 @@ class DraconityEngine(EngineBase):
         except:
             self._log.error("Error handling message: %s", format_message(msg), exc_info=True)
 
-    def phrase_end(self, data):
+    def phrase_end(self, results):
         # TODO: Investigate
         # https://github.com/dictation-toolbox/dragonfly/commit/9dbf1ce6b95d6aee63e0275dd66a0df6e9a751db
+        # If we want to include this fix then can just make
+        # GrammarWrapper a subclass of NatlinkGrammarWrapper and
+        # call the _process_rules method on it from here.
 
-        grammar_name = data["grammar"]
+        grammar_name = results["grammar"]
         wrapper = self._get_grammar_wrapper(grammar_name)
         grammar = wrapper.grammar
 
-        words = data["phrase"]
-        rule_ids = [d[self.rule_id_key] for d in data["words"]]
+        words = results["phrase"]
+        rule_ids = [d[self.rule_id_key] for d in results["words"]]
+        assert len(words) == len(rule_ids)
         words_rules = list(zip(words, rule_ids))
 
-        self._log.debug("Grammar %s: received recognition %r.", grammar.name, words)
+        self._log.info("Grammar %s: received recognition %r.", grammar.name, words_rules)
 
         # Call the grammar"s general process_recognition method, if present.
         func = getattr(wrapper.grammar, "process_recognition", None)
         if func:
-            if not func(words):
+            if not wrapper._process_grammar_callback(func, words=words,
+                                                  results=results):
+                # Return early if the method didn't return True or equiv.
                 return
 
         s = state_.State(words_rules, grammar._rule_names, self)
@@ -294,13 +302,15 @@ class DraconityEngine(EngineBase):
             for _ in r.decode(s):
                 if s.finished():
                     root = s.build_parse_tree()
-                    self._recognition_observer_manager.notify_recognition(words, r, root, data)
+                    self._recognition_observer_manager.notify_recognition(words, r, root, results)
                     r.process_recognition(root)
                     return
 
         self._log.warning("Grammar %s: failed to decode"
                                    " recognition %r.", grammar.name, words_rules)
 
+    def _has_quoted_words_support(self):
+        return True
 
     def _get_language(self):
         return self._language
@@ -308,8 +318,9 @@ class DraconityEngine(EngineBase):
     def _set_language(self, language_code):
         if language_code in self._language_ids:
             language = self._language_ids[language_code]
-            self._log.debug("Setting language to '%s'", language)
-            self._language = language
+            if self._language != language:
+                self._log.debug("Setting language to '%s'", language)
+                self._language = language
             return
 
         # Speaker language wasn't found.
@@ -321,9 +332,10 @@ class DraconityEngine(EngineBase):
     }
 
 
-class GrammarWrapper(object):
+class GrammarWrapper(GrammarWrapperBase):
 
-    def __init__(self, grammar, state, engine):
+    def __init__(self, grammar, state, engine, recobs_manager):
+        GrammarWrapperBase.__init__(self, grammar, engine, recobs_manager)
         self.grammar = grammar
         # Keep track of last "g.set" request sent, when we need to update the grammar
         # we update this and send it again
@@ -363,3 +375,5 @@ class GrammarWrapper(object):
             })
         self.dirty = False
         return self.state, changed
+
+    # TODO: _retain_audio, should be simple

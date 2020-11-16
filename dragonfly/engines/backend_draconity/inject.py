@@ -14,9 +14,9 @@ logger = logging.getLogger(__name__)
 
 def get_pid(proc_name):
     WMI = GetObject('winmgmts:')
-    p = WMI.ExecQuery(f'select * from Win32_Process where Name="{proc_name}"')
+    p = WMI.ExecQuery('select * from Win32_Process where Name="%s"' % proc_name)
     if not p:
-        raise InjectionFailure(f"Couldn't find process with name '{proc_name}'")
+        raise InjectionFailure("Couldn't find process with name '%s'" % proc_name)
     pid = p[0].Properties_('ProcessId').Value
     return pid
 

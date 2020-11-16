@@ -31,7 +31,7 @@ class _DraconityConfig(object):
         self.secret = secret
 
     def __repr__(self):
-        return f"_DraconityConfig(secret={self.secret}, pipe_path={self.pipe_path}, tcp_host={self.tcp_host}, tcp_port={self.tcp_port})"
+        return "_DraconityConfig(secret='%s', pipe_path=%s, tcp_host='%s', tcp_port=%s)" % self.secret, self.pipe_path, self.tcp_host, self.tcp_port
 
     @staticmethod
     def _load_config_file():
