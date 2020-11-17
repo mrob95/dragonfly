@@ -1,3 +1,4 @@
+import subprocess
 import sys
 from pathlib import Path
 
@@ -11,7 +12,6 @@ from ..backend_natlink.compiler import NatlinkCompiler
 from ...grammar import state as state_
 from ...grammar.grammar_base import Grammar
 from .config import _DraconityConfig
-from .inject import inject_draconity
 from .stream import TCPStream
 from .client import DraconityClient, prep_auth, prep_grammar_set, prep_grammar_unload, prep_status, prep_mimic, prep_unpause
 from .dictation import DraconityDictationContainer
@@ -93,19 +93,28 @@ class DraconityEngine(EngineBase):
         self.config = _DraconityConfig.load_from_disk()
         self.config.assert_valid_connection()
 
+    def inject_draconity(self):
+        # TODO: Make this work on older python versions
+        self._log.info("Injecting draconity.")
+        result = subprocess.run([
+            self.injector_path,
+            "natspeak.exe",
+            self.draconity_path])
+        if result.returncode:
+            raise EngineError("Failed to inject '%s'. Output from injector was:\n%s", self.draconity_path, result.stdout)
+        self._log.info("Injection successful.")
+
     def connect(self):
         try:
             stream = TCPStream(self.config.tcp_host, self.config.tcp_port)
             self._log.info("Connected to existing draconity instance.")
         except ConnectionRefusedError:
-            self._log.info("Injecting draconity.")
-            inject_draconity(self.injector_path, self.draconity_path)
+            self.inject_draconity()
             stream = TCPStream(self.config.tcp_host, self.config.tcp_port)
 
         self.client = DraconityClient(self.handle_message)
-
         self.client.connect(stream)
-        self._log.info("Client successfully connected")
+        self._log.info("Client successfully connected.")
 
         self.queue_send(prep_auth(self.config.secret))
         self.queue_send(prep_status())
@@ -266,9 +275,11 @@ class DraconityEngine(EngineBase):
                         self._log.warning("Received a failure notification in setting grammar %s, but could not find it in _grammar_wrappers.", msg["name"])
             if "language_id" in msg:
                 if msg["language_id"] < 0:
-                    self._log.warning("Received status packet with negative language id, %s", format_message(msg))
+                    # Engine not ready yet
+                    # self._log.warning("Received status packet with negative language id, %s", format_message(msg))
                     self.queue_send(prep_status())
-                self._set_language(msg["language_id"])
+                else:
+                    self._set_language(msg["language_id"])
 
             if "success" in msg and not msg["success"]:
                 # Something went wrong
