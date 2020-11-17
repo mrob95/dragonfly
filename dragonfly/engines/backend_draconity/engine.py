@@ -112,7 +112,7 @@ class DraconityEngine(EngineBase):
             self.inject_draconity()
             stream = TCPStream(self.config.tcp_host, self.config.tcp_port)
 
-        self.client = DraconityClient(self.handle_message)
+        self.client = DraconityClient(self.handle_message, self.handle_error, self.handle_disconnect)
         self.client.connect(stream)
         self._log.info("Client successfully connected.")
 
@@ -237,13 +237,21 @@ class DraconityEngine(EngineBase):
         self.queue_send(msg)
 
     def _do_recognition(self):
-        try:
-            self._message_loop.pump_messages()
-        except:
-            self.disconnect()
+        self._message_loop.pump_messages()
+        self.disconnect()
 
     def queue_send(self, msg):
         self._message_loop.queue_function(self.client.send, msg)
+
+    # TODO:
+    def handle_error(self, error):
+        self._log.error(error, exc_info=True)
+
+    def handle_disconnect(self):
+        self._message_loop.queue_function(self.finished)
+
+    def finished(self):
+        raise _FunctionLoop.Finished
 
     def handle_message(self, tid, msg):
         self._message_loop.queue_function(self._handle_message, tid, msg)
@@ -271,12 +279,10 @@ class DraconityEngine(EngineBase):
                     if wrapper:
                         wrapper.dirty = True
                     else:
-                        # Not sure how this would happen, hopefully it won't
                         self._log.warning("Received a failure notification in setting grammar %s, but could not find it in _grammar_wrappers.", msg["name"])
             if "language_id" in msg:
                 if msg["language_id"] < 0:
                     # Engine not ready yet
-                    # self._log.warning("Received status packet with negative language id, %s", format_message(msg))
                     self.queue_send(prep_status())
                 else:
                     self._set_language(msg["language_id"])
