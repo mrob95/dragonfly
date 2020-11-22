@@ -1,6 +1,10 @@
 import subprocess
 import sys
+import os
+from datetime import datetime
 from pathlib import Path
+
+from six import text_type, binary_type, string_types, PY2
 
 if sys.version_info < (3,):
     from Queue import Queue
@@ -23,7 +27,7 @@ def format_message(msg):
     if "cmd" in msg_str and isinstance(msg_str["cmd"], dict) and msg_str["cmd"]["cmd"] == "g.set":
         msg_str["cmd"]["data"] = "..."
         msg_str["cmd"]["lists"] = "..."
-    if "cmd" in msg_str and msg_str["cmd"] == "p.end":
+    if "wav" in msg_str:
         msg_str["wav"] = "..."
     return msg_str
 
@@ -65,7 +69,11 @@ class DraconityEngine(EngineBase):
     _name = "draconity"
     DictationContainer = DraconityDictationContainer
 
-    def __init__(self, injector_path, draconity_path, dragon_old_version=False):
+    def __init__(self,
+                 injector_path,
+                 draconity_path,
+                 dragon_old_version=False,
+                 retain_dir=None):
         super(DraconityEngine, self).__init__()
 
         # Path to inject.exe
@@ -84,14 +92,22 @@ class DraconityEngine(EngineBase):
         # and we decide on our end which to use.
         self.rule_id_key = "rule" if not dragon_old_version else "old_rule"
 
+        if retain_dir and not os.path.isdir(retain_dir):
+            self._log.warning(
+                "Audio will not be retained because '%s' is not a "
+                "directory.", retain_dir
+            )
+            self._retain_dir = None
+        else:
+            self._retain_dir = retain_dir
+
         self._language = "en"
 
         self._recognition_observer_manager = RecObsManagerBase(self)
         self._message_loop = _FunctionLoop()
 
-        # TODO: Create if doesn't exist
-        self.config = _DraconityConfig.load_from_disk()
-        self.config.assert_valid_connection()
+        self._config = _DraconityConfig.load_from_disk()
+        self._config.assert_valid_connection()
 
     def inject_draconity(self):
         # TODO: Make this work on older python versions
@@ -106,21 +122,20 @@ class DraconityEngine(EngineBase):
 
     def connect(self):
         try:
-            stream = TCPStream(self.config.tcp_host, self.config.tcp_port)
+            stream = TCPStream(self._config.tcp_host, self._config.tcp_port)
             self._log.info("Connected to existing draconity instance.")
         except ConnectionRefusedError:
             self.inject_draconity()
-            stream = TCPStream(self.config.tcp_host, self.config.tcp_port)
+            stream = TCPStream(self._config.tcp_host, self._config.tcp_port)
 
         self.client = DraconityClient(self.handle_message, self.handle_error, self.handle_disconnect)
         self.client.connect(stream)
         self._log.info("Client successfully connected.")
 
-        self.queue_send(prep_auth(self.config.secret))
+        self.queue_send(prep_auth(self._config.secret))
         self.queue_send(prep_status())
 
     def disconnect(self):
-        # TODO: Unload grammars? I think draconity does it anyway
         for wrapper in self._iter_all_grammar_wrappers_dynamically():
             self.unload_grammar(wrapper.grammar)
         self.client.close()
@@ -224,8 +239,6 @@ class DraconityEngine(EngineBase):
             wrapper.exclusive = exclusive
             wrapper.dirty = True
 
-    #------------------------------------------------
-
     def mimic(self, words):
         """Mimic a recognition of the given `words`.
 
@@ -236,6 +249,8 @@ class DraconityEngine(EngineBase):
         msg = prep_mimic(words)
         self.queue_send(msg)
 
+    #------------------------------------------------
+
     def _do_recognition(self):
         self._message_loop.pump_messages()
         self.disconnect()
@@ -243,7 +258,6 @@ class DraconityEngine(EngineBase):
     def queue_send(self, msg):
         self._message_loop.queue_function(self.client.send, msg)
 
-    # TODO:
     def handle_error(self, error):
         self._log.error(error, exc_info=True)
 
@@ -257,6 +271,7 @@ class DraconityEngine(EngineBase):
         self._message_loop.queue_function(self._handle_message, tid, msg)
 
     def _handle_message(self, tid, msg):
+        # TODO: Should probably do this in a more disciplined way.
         try:
             self._log.debug("[%i] %s", tid, format_message(msg))
             # Parse message and dispatch
@@ -326,13 +341,42 @@ class DraconityEngine(EngineBase):
             s.initialize_decoding()
             for _ in r.decode(s):
                 if s.finished():
+                    self._retain_audio(words, results, r.name, grammar)
                     root = s.build_parse_tree()
                     self._recognition_observer_manager.notify_recognition(words, r, root, results)
                     r.process_recognition(root)
+                    self._recognition_observer_manager.notify_post_recognition(words, r, root, results)
                     return
 
         self._log.warning("Grammar %s: failed to decode"
                                    " recognition %r.", grammar.name, words_rules)
+
+
+    def _retain_audio(self, words, results, rule_name, grammar):
+        if not self._retain_dir:
+            return
+        retain_dir = self._retain_dir
+        if "wav" in results:
+            audio = results["wav"]
+            if len(audio) > 0:
+                now = datetime.now().strftime("%Y-%m-%d_%H-%M-%S_%f")
+                filename = "retain_%s.wav" % now
+                wav_path = os.path.join(retain_dir, filename)
+                with open(wav_path, "wb") as f:
+                    f.write(audio)
+
+                # Write metadata, assuming 11025Hz 16bit mono audio
+                text = ' '.join(words)
+                audio_length = float(len(audio) / 2) / 11025
+                tsv_path = os.path.join(retain_dir, "retain.tsv")
+                with open(tsv_path, "a") as tsv_file:
+                    tsv_file.write('\t'.join([
+                        filename, text_type(audio_length),
+                        grammar.name, rule_name, text
+                    ]) + '\n')
+        else:
+            self._log.warning("Failed to retain audio as the 'p.end' message did not contain audio data. The message was: %s", format_message(results))
+
 
     def _has_quoted_words_support(self):
         return True

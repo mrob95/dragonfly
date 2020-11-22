@@ -1,9 +1,10 @@
 import toml
 import os
 import platform
+import secrets
+import logging
 
-
-
+_log = logging.getLogger("engine")
 
 def _draconity_config_path():
     """Get the path to the Draconity config file, based on platform.
@@ -17,12 +18,42 @@ def _draconity_config_path():
     if system in ["Darwin", "Linux"]:
         return os.path.expanduser("~/.talon/draconity.toml")
     elif system == "Windows":
-        return os.path.expandvars("%APPDATA%/talon/draconity.toml")
+        return os.path.expandvars("%APPDATA%\\talon\\draconity.toml")
     else:
         raise NotImplementedError("Not supported on this platform.")
 
+def _draconity_default_config():
+    target_directory = os.path.dirname(_draconity_config_path())
+    log_path = os.path.join(target_directory, "draconity.log")
+    cfg = {
+        "timeout": 40,
+        "timeout_incomplete": 500,
+        "prevent_wake": 1,
+        "secret": secrets.token_urlsafe(16),
+        "logfile": log_path,
+        "socket": [
+            {
+                "host": "127.0.0.1",
+                "port": 38065,
+            }
+        ]
+    }
+    return cfg
+
+def _create_config_file(target_path):
+    target_directory = os.path.dirname(target_path)
+    if os.path.exists(target_path):
+        raise ValueError("Attempting to create '%s', but the file already exists.", target_path)
+    if not os.path.isdir(target_directory):
+        _log.info("Creating directory '%s'.", target_directory)
+        os.makedirs(target_directory)
+    with open(target_path, "w+") as f:
+        _log.info("Creating draconity.toml in '%s'.", target_directory)
+        toml.dump(_draconity_default_config(), f)
+
 
 class _DraconityConfig(object):
+
     def __init__(self, secret, pipe_path, tcp_host, tcp_port):
         """Create an object that holds the current Draconity config."""
         self.pipe_path = pipe_path
@@ -35,8 +66,13 @@ class _DraconityConfig(object):
 
     @staticmethod
     def _load_config_file():
-        """Load Draconity's config as a dict from the config file."""
-        return toml.load(_draconity_config_path())
+        """Load Draconity's config as a dict from the config file, creating it if necessary."""
+        config_path = _draconity_config_path()
+        if not os.path.exists(config_path):
+            _log.info("Draconity config file not found, creating...")
+            _create_config_file(config_path)
+        _log.info("Loading draconity config from '%s'.", config_path)
+        return toml.load(config_path)
 
     @staticmethod
     def _extract_tcp_host(config):
