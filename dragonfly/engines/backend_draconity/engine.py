@@ -117,7 +117,7 @@ class DraconityEngine(EngineBase):
             "natspeak.exe",
             self.draconity_path])
         if result.returncode:
-            raise EngineError("Failed to inject '%s'. Output from injector was:\n%s", self.draconity_path, result.stdout)
+            raise EngineError("Failed to inject '%s'. Output from injector was:\n%s" % (self.draconity_path, result.stdout))
         self._log.info("Injection successful.")
 
     def connect(self):
@@ -161,7 +161,7 @@ class DraconityEngine(EngineBase):
         wrapper = self._grammar_wrappers.pop(grammar.name)
         if not wrapper:
             raise EngineError("Grammar %s cannot be unloaded because"
-                              " it was not loaded.", grammar)
+                              " it was not loaded." % grammar)
         self._unload_grammar(grammar, wrapper)
 
     def _unload_grammar(self, grammar, wrapper):

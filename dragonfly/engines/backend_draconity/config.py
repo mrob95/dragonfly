@@ -43,7 +43,7 @@ def _draconity_default_config():
 def _create_config_file(target_path):
     target_directory = os.path.dirname(target_path)
     if os.path.exists(target_path):
-        raise ValueError("Attempting to create '%s', but the file already exists.", target_path)
+        raise ValueError("Attempting to create '%s', but the file already exists." % target_path)
     if not os.path.isdir(target_directory):
         _log.info("Creating directory '%s'.", target_directory)
         os.makedirs(target_directory)
